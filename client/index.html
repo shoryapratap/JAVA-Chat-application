@@ -75,12 +75,40 @@
     </div>
     <div style="margin-top:10px;">
       <button id="btnLogin">Login</button>
+      <button id="btnShowReg" style="background:none; border:none; color:blue; text-decoration:underline; cursor:pointer;">Don't have an account? Sign Up</button>
     </div>
     <p class="sys" id="loginMsg"></p>
   </div>
 
+  <div id="register" style="display:none; max-width: 700px; margin: 0 auto;">
+    <h2>Create New Account</h2>
+    <div>
+      <label>Username</label><br />
+      <input id="regUsername" type="text" />
+    </div>
+    <div style="margin-top:8px;">
+      <label>Password</label><br />
+      <input id="regPassword" type="password" />
+    </div>
+    <div style="margin-top:8px;">
+      <label>Display Name</label><br />
+      <input id="regDisplayName" type="text" />
+    </div>
+    <div style="margin-top:10px;">
+      <button id="btnDoRegister">Register</button>
+      <button id="btnShowLogin" style="background:none; border:none; color:blue; text-decoration:underline; cursor:pointer;">Already have an account? Login</button>
+    </div>
+    <p class="sys" id="regMsg"></p>
+  </div>
+
   <div id="chat" style="display:none;">
-    <h2>Chat Room <span id="status"></span></h2>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2>Chat Room <span id="status"></span></h2>
+      <button id="btnClearAll" style="display:none; background:#ff4444; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">Clear All Chat</button>
+    </div>
+    <div id="ipDisplay" style="margin-top:5px; margin-bottom:10px; padding:5px; background:#eef; border-radius:5px; border:1px dashed #99f; font-size:0.8em; text-align:center;">
+      Scanning network for IP...
+    </div>
     <div id="messages"></div>
     <div id="controls">
       <input id="inputMessage" type="text" placeholder="Type message and press Enter" />
@@ -94,20 +122,56 @@
   <script>
     let ws;
     let displayName = null;
-    const serverUrl = "ws://192.168.29.173:8080";
+    const serverUrl = "ws://" + window.location.hostname + ":8080";
 
     document.getElementById('btnLogin').addEventListener('click', doLogin);
     document.getElementById('btnLogout').addEventListener('click', doLogout);
     document.getElementById('sendBtn').addEventListener('click', sendMessage);
+    document.getElementById('btnShowReg').addEventListener('click', () => {
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('register').style.display = 'block';
+    });
+    document.getElementById('btnShowLogin').addEventListener('click', () => {
+      document.getElementById('register').style.display = 'none';
+      document.getElementById('login').style.display = 'block';
+    });
+    document.getElementById('btnDoRegister').addEventListener('click', doRegister);
+    document.getElementById('btnClearAll').addEventListener('click', () => {
+      if (confirm("Are you sure you want to delete ALL messages?")) {
+        ws.send("CLEAR_ALL");
+      }
+    });
+
     document.getElementById('inputMessage').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sendMessage();
     });
 
-    function addMessage(html, cls) {
+    function addMessage(html, cls, msgId, senderUsername) {
       const container = document.getElementById('messages');
       const div = document.createElement('div');
       div.className = cls || 'msg';
+      if (msgId) div.id = 'msg-' + msgId;
+      
       div.innerHTML = html;
+
+      // Add delete button if owner or admin
+      const currentUsername = document.getElementById('username').value.trim();
+      if (msgId && (currentUsername === 'admin' || currentUsername === senderUsername)) {
+        const delBtn = document.createElement('button');
+        delBtn.innerText = 'Delete';
+        delBtn.style.marginLeft = '10px';
+        delBtn.style.fontSize = '0.7em';
+        delBtn.style.color = 'white';
+        delBtn.style.background = '#ff6666';
+        delBtn.style.border = 'none';
+        delBtn.style.padding = '2px 5px';
+        delBtn.style.borderRadius = '3px';
+        delBtn.style.cursor = 'pointer';
+        delBtn.title = 'Delete message';
+        delBtn.onclick = () => { if (confirm("Delete this message?")) ws.send("DEL " + msgId); };
+        div.appendChild(delBtn);
+      }
+
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
     }
@@ -133,12 +197,30 @@
 
         if (text.startsWith("AUTH_OK")) {
           displayName = text.substring("AUTH_OK".length).trim();
+          const currentUsername = document.getElementById('username').value.trim();
+          if (currentUsername === 'admin') document.getElementById('btnClearAll').style.display = 'block';
+
           document.getElementById('login').style.display = 'none';
           document.getElementById('chat').style.display = 'block';
           document.getElementById('status').innerText = "(" + displayName + ")";
           addMessage("<em>Authenticated as " + escapeHtml(displayName) + "</em>", "sys");
+        } else if (text.startsWith("WELCOME_IP ")) {
+          const ip = text.substring(11).trim();
+          document.getElementById('ipDisplay').innerHTML = "Tell your friends to join at:<br><strong>http://" + ip + ":8081</strong>";
         } else if (text.startsWith("AUTH_FAIL")) {
           document.getElementById('loginMsg').innerText = text;
+          ws.close();
+        } else if (text.startsWith("REG_OK")) {
+          document.getElementById('regMsg').style.color = "green";
+          document.getElementById('regMsg').innerText = text.substring(7);
+          setTimeout(() => {
+            document.getElementById('btnShowLogin').click();
+            document.getElementById('regMsg').innerText = "";
+          }, 2000);
+          ws.close();
+        } else if (text.startsWith("REG_ERR")) {
+          document.getElementById('regMsg').style.color = "red";
+          document.getElementById('regMsg').innerText = text.substring(8);
           ws.close();
         } else if (text.startsWith("MSG ")) {
 
@@ -147,12 +229,13 @@
           const payload = text.substring(4);
           const headParts = payload.split(' ');
 
-          if (headParts.length >= 4) {
-            const timestamp = headParts[0] + " " + headParts[1];
-            const username = headParts[2];
-            const disp = headParts[3];
-            const content = payload.split(' ').slice(4).join(' ');
-            addMessage("<span class='sender'>" + escapeHtml(disp) + ":</span> " + escapeHtml(content) + " <span style='color:#888;font-size:0.8em'>(" + escapeHtml(timestamp) + ")</span>");
+          if (headParts.length >= 5) {
+            const msgId = headParts[0];
+            const timestamp = headParts[1] + " " + headParts[2];
+            const username = headParts[3];
+            const disp = headParts[4];
+            const content = payload.split(' ').slice(5).join(' ');
+            addMessage("<span class='sender'>" + escapeHtml(disp) + ":</span> " + escapeHtml(content) + " <span style='color:#888;font-size:0.8em'>(" + escapeHtml(timestamp) + ")</span>", "msg", msgId, username);
           } else {
 
             addMessage(escapeHtml(text));
@@ -165,17 +248,23 @@
           const content = payload.split(' ').slice(2).join(' ');
           addMessage("<em>" + escapeHtml(content) + " (" + escapeHtml(timestamp) + ")</em>", "sys");
         } else if (text.startsWith("HIST ")) {
-
           const payload = text.substring(5);
           const parts = payload.split(' ');
-          if (parts.length >= 3) {
-            const timestamp = parts[0] + " " + parts[1];
-            const sender = parts[2];
-            const content = parts.slice(3).join(' ');
-            addMessage("<span style='color:#666'>(history) </span><span class='sender'>" + escapeHtml(sender) + ":</span> " + escapeHtml(content) + " <span style='color:#888;font-size:0.8em'>(" + escapeHtml(timestamp) + ")</span>");
+          if (parts.length >= 4) {
+            const msgId = parts[0];
+            const timestamp = parts[1] + " " + parts[2];
+            const sender = parts[3];
+            const content = parts.slice(4).join(' ');
+            addMessage("<span style='color:#666'>(history) </span><span class='sender'>" + escapeHtml(sender) + ":</span> " + escapeHtml(content) + " <span style='color:#888;font-size:0.8em'>(" + escapeHtml(timestamp) + ")</span>", "msg", msgId, sender);
           } else {
             addMessage(escapeHtml(text), "sys");
           }
+        } else if (text.startsWith("DEL_UI ")) {
+          const msgId = text.substring(7).trim();
+          const el = document.getElementById('msg-' + msgId);
+          if (el) el.remove();
+        } else if (text.startsWith("CLEAR_UI")) {
+          document.getElementById('messages').innerHTML = "";
         } else {
           addMessage(escapeHtml(text));
         }
@@ -204,6 +293,72 @@
       ws.send(text);
       input.value = '';
     }
+    function doRegister() {
+      const u = document.getElementById('regUsername').value.trim();
+      const p = document.getElementById('regPassword').value.trim();
+      const d = document.getElementById('regDisplayName').value.trim();
+      if (!u || !p || !d) {
+        document.getElementById('regMsg').style.color = "red";
+        document.getElementById('regMsg').innerText = "All fields are required";
+        return;
+      }
+      document.getElementById('regMsg').style.color = "gray";
+      document.getElementById('regMsg').innerText = "Connecting...";
+      ws = new WebSocket(serverUrl);
+      ws.onopen = () => {
+        ws.send("REG " + u + " " + p + " " + d);
+      };
+      ws.onmessage = (evt) => {
+        // reuse the main message handler
+        const event = { data: evt.data };
+        ws.onmessage_original(event);
+      };
+      // We need to temporarily "hack" the onmessage handler or use a separate one.
+      // Let's just make the main onmessage handle REG_OK/ERR.
+      // I'll update the doLogin logic to not conflict.
+    }
+
+    // Wait, let's just make doRegister simpler by using the same ws object if it exists.
+    // But we usually close the ws after failure/success.
+    // Let's just keep the main onmessage handler.
+    
+    // REDEFINING doRegister properly:
+    function doRegister() {
+      const u = document.getElementById('regUsername').value.trim();
+      const p = document.getElementById('regPassword').value.trim();
+      const d = document.getElementById('regDisplayName').value.trim();
+      if (!u || !p || !d) {
+        document.getElementById('regMsg').style.color = "red";
+        document.getElementById('regMsg').innerText = "All fields are required";
+        return;
+      }
+      ws = new WebSocket(serverUrl);
+      ws.onopen = () => {
+        ws.send("REG " + u + " " + p + " " + d);
+      };
+      ws.onmessage = (evt) => {
+        const text = evt.data;
+        if (text.startsWith("REG_OK")) {
+          document.getElementById('regMsg').style.color = "green";
+          document.getElementById('regMsg').innerText = text.substring(7);
+          setTimeout(() => {
+            document.getElementById('register').style.display = 'none';
+            document.getElementById('login').style.display = 'block';
+            document.getElementById('regMsg').innerText = "";
+          }, 2000);
+          ws.close();
+        } else if (text.startsWith("REG_ERR")) {
+          document.getElementById('regMsg').style.color = "red";
+          document.getElementById('regMsg').innerText = text.substring(8);
+          ws.close();
+        }
+      };
+      ws.onerror = () => {
+        document.getElementById('regMsg').style.color = "red";
+        document.getElementById('regMsg').innerText = "Server connection failed";
+      };
+    }
+
     function doLogout() {
       if (ws) ws.close();
       document.getElementById('chat').style.display = 'none';
