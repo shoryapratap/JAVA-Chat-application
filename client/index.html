@@ -1,22 +1,67 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <title>Local Chat (WebSocket)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    #login, #chat { max-width: 700px; margin: 0 auto; }
-    #messages { height: 400px; border: 1px solid #ccc; padding: 8px; overflow-y: auto; background:#fafafa; }
-    .sys { color: gray; font-size: 0.9em; }
-    .msg { margin: 4px 0; }
-    .sender { font-weight: bold; margin-right: 6px; }
-    #status { color: green; }
-    #controls { margin-top: 8px; display:flex; gap:8px; }
-    input[type="text"], input[type="password"] { padding:6px; width:100%; box-sizing:border-box; }
-    button { padding:8px 12px; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+
+    #login,
+    #chat {
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    #messages {
+      height: 400px;
+      border: 1px solid #ccc;
+      padding: 8px;
+      overflow-y: auto;
+      background: #fafafa;
+    }
+
+    .sys {
+      color: gray;
+      font-size: 0.9em;
+    }
+
+    .msg {
+      margin: 4px 0;
+    }
+
+    .sender {
+      font-weight: bold;
+      margin-right: 6px;
+    }
+
+    #status {
+      color: green;
+    }
+
+    #controls {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      padding: 6px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    button {
+      padding: 8px 12px;
+    }
   </style>
 </head>
+
 <body>
   <div id="login">
     <h2>Login to Local Chat</h2>
@@ -46,131 +91,132 @@
     </div>
   </div>
 
-<script>
-let ws;
-let displayName = null;
-const serverUrl = "http://192.168.0.105:8080";
+  <script>
+    let ws;
+    let displayName = null;
+    const serverUrl = "ws://192.168.29.173:8080";
 
-document.getElementById('btnLogin').addEventListener('click', doLogin);
-document.getElementById('btnLogout').addEventListener('click', doLogout);
-document.getElementById('sendBtn').addEventListener('click', sendMessage);
-document.getElementById('inputMessage').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendMessage();
-});
+    document.getElementById('btnLogin').addEventListener('click', doLogin);
+    document.getElementById('btnLogout').addEventListener('click', doLogout);
+    document.getElementById('sendBtn').addEventListener('click', sendMessage);
+    document.getElementById('inputMessage').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
 
-function addMessage(html, cls) {
-  const container = document.getElementById('messages');
-  const div = document.createElement('div');
-  div.className = cls || 'msg';
-  div.innerHTML = html;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-}
-
-function doLogin() {
-  const username = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value.trim();
-  if (!username || !password) {
-    document.getElementById('loginMsg').innerText = "Enter username & password";
-    return;
-  }
-  document.getElementById('loginMsg').innerText = "Connecting...";
-  ws = new WebSocket(serverUrl);
-
-  ws.onopen = () => {
-    document.getElementById('loginMsg').innerText = "Connected. Authenticating...";
-   
-    ws.send("AUTH " + username + " " + password);
-  };
-
-  ws.onmessage = (evt) => {
-    const text = evt.data;
-    
-    if (text.startsWith("AUTH_OK")) {
-      displayName = text.substring("AUTH_OK".length).trim();
-      document.getElementById('login').style.display = 'none';
-      document.getElementById('chat').style.display = 'block';
-      document.getElementById('status').innerText = "(" + displayName + ")";
-      addMessage("<em>Authenticated as " + escapeHtml(displayName) + "</em>", "sys");
-    } else if (text.startsWith("AUTH_FAIL")) {
-      document.getElementById('loginMsg').innerText = text;
-      ws.close();
-    } else if (text.startsWith("MSG ")) {
-
-      const parts = text.split(' ');
-
-      const payload = text.substring(4);
-      const headParts = payload.split(' ');
-
-      if (headParts.length >= 4) {
-        const timestamp = headParts[0] + " " + headParts[1];
-        const username = headParts[2];
-        const disp = headParts[3];
-        const content = payload.split(' ').slice(4).join(' ');
-        addMessage("<span class='sender'>" + escapeHtml(disp) + ":</span> " + escapeHtml(content) + " <span style='color:#888;font-size:0.8em'>(" + escapeHtml(timestamp) + ")</span>");
-      } else {
-       
-        addMessage(escapeHtml(text));
-      }
-    } else if (text.startsWith("SYS ")) {
-   
-      const payload = text.substring(4);
-      const parts = payload.split(' ');
-      const timestamp = parts[0] + " " + parts[1];
-      const content = payload.split(' ').slice(2).join(' ');
-      addMessage("<em>" + escapeHtml(content) + " (" + escapeHtml(timestamp) + ")</em>", "sys");
-    } else if (text.startsWith("HIST ")) {
-     
-      const payload = text.substring(5);
-      const parts = payload.split(' ');
-      if (parts.length >= 3) {
-        const timestamp = parts[0] + " " + parts[1];
-        const sender = parts[2];
-        const content = parts.slice(3).join(' ');
-        addMessage("<span style='color:#666'>(history) </span><span class='sender'>" + escapeHtml(sender) + ":</span> " + escapeHtml(content) + " <span style='color:#888;font-size:0.8em'>(" + escapeHtml(timestamp) + ")</span>");
-      } else {
-        addMessage(escapeHtml(text), "sys");
-      }
-    } else {
-      addMessage(escapeHtml(text));
+    function addMessage(html, cls) {
+      const container = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.className = cls || 'msg';
+      div.innerHTML = html;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
     }
-  };
 
-  ws.onclose = () => {
-    addMessage("<em>Connection closed.</em>", "sys");
-    if (document.getElementById('chat').style.display === 'block') {
-      
+    function doLogin() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value.trim();
+      if (!username || !password) {
+        document.getElementById('loginMsg').innerText = "Enter username & password";
+        return;
+      }
+      document.getElementById('loginMsg').innerText = "Connecting...";
+      ws = new WebSocket(serverUrl);
+
+      ws.onopen = () => {
+        document.getElementById('loginMsg').innerText = "Connected. Authenticating...";
+
+        ws.send("AUTH " + username + " " + password);
+      };
+
+      ws.onmessage = (evt) => {
+        const text = evt.data;
+
+        if (text.startsWith("AUTH_OK")) {
+          displayName = text.substring("AUTH_OK".length).trim();
+          document.getElementById('login').style.display = 'none';
+          document.getElementById('chat').style.display = 'block';
+          document.getElementById('status').innerText = "(" + displayName + ")";
+          addMessage("<em>Authenticated as " + escapeHtml(displayName) + "</em>", "sys");
+        } else if (text.startsWith("AUTH_FAIL")) {
+          document.getElementById('loginMsg').innerText = text;
+          ws.close();
+        } else if (text.startsWith("MSG ")) {
+
+          const parts = text.split(' ');
+
+          const payload = text.substring(4);
+          const headParts = payload.split(' ');
+
+          if (headParts.length >= 4) {
+            const timestamp = headParts[0] + " " + headParts[1];
+            const username = headParts[2];
+            const disp = headParts[3];
+            const content = payload.split(' ').slice(4).join(' ');
+            addMessage("<span class='sender'>" + escapeHtml(disp) + ":</span> " + escapeHtml(content) + " <span style='color:#888;font-size:0.8em'>(" + escapeHtml(timestamp) + ")</span>");
+          } else {
+
+            addMessage(escapeHtml(text));
+          }
+        } else if (text.startsWith("SYS ")) {
+
+          const payload = text.substring(4);
+          const parts = payload.split(' ');
+          const timestamp = parts[0] + " " + parts[1];
+          const content = payload.split(' ').slice(2).join(' ');
+          addMessage("<em>" + escapeHtml(content) + " (" + escapeHtml(timestamp) + ")</em>", "sys");
+        } else if (text.startsWith("HIST ")) {
+
+          const payload = text.substring(5);
+          const parts = payload.split(' ');
+          if (parts.length >= 3) {
+            const timestamp = parts[0] + " " + parts[1];
+            const sender = parts[2];
+            const content = parts.slice(3).join(' ');
+            addMessage("<span style='color:#666'>(history) </span><span class='sender'>" + escapeHtml(sender) + ":</span> " + escapeHtml(content) + " <span style='color:#888;font-size:0.8em'>(" + escapeHtml(timestamp) + ")</span>");
+          } else {
+            addMessage(escapeHtml(text), "sys");
+          }
+        } else {
+          addMessage(escapeHtml(text));
+        }
+      };
+
+      ws.onclose = () => {
+        addMessage("<em>Connection closed.</em>", "sys");
+        if (document.getElementById('chat').style.display === 'block') {
+
+          document.getElementById('chat').style.display = 'none';
+          document.getElementById('login').style.display = 'block';
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error("WebSocket connection failed", err);
+        document.getElementById('loginMsg').innerText = "WebSocket Error: Cannot connect to server. Is the Java ChatServer running on port 9090?";
+        document.getElementById('loginMsg').style.color = "red";
+      };
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('inputMessage');
+      const text = input.value.trim();
+      if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(text);
+      input.value = '';
+    }
+    function doLogout() {
+      if (ws) ws.close();
       document.getElementById('chat').style.display = 'none';
       document.getElementById('login').style.display = 'block';
+      document.getElementById('messages').innerHTML = '';
+      document.getElementById('username').value = '';
+      document.getElementById('password').value = '';
     }
-  };
-
-  ws.onerror = (err) => {
-    console.error("WebSocket connection failed", err);
-    document.getElementById('loginMsg').innerText = "WebSocket Error: Cannot connect to server. Is the Java ChatServer running on port 9090?";
-    document.getElementById('loginMsg').style.color = "red";
-  };
-}
-
-function sendMessage() {
-  const input = document.getElementById('inputMessage');
-  const text = input.value.trim();
-  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(text);
-  input.value = '';
-}
-function doLogout() {
-  if (ws) ws.close();
-  document.getElementById('chat').style.display = 'none';
-  document.getElementById('login').style.display = 'block';
-  document.getElementById('messages').innerHTML = '';
-  document.getElementById('username').value = '';
-  document.getElementById('password').value = '';
-}
-function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-</script>
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+  </script>
 
 </body>
+
 </html>
